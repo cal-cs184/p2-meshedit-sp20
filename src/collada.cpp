@@ -545,6 +545,11 @@ namespace CGL {
 
       // polylist
       XMLElement* e_polylist = e_mesh->FirstChildElement( "polylist" );
+      bool is_triangles = false;
+      if ( !e_polylist ) {
+        e_polylist = e_mesh->FirstChildElement( "triangles" );
+        is_triangles = true;
+      }
       if ( e_polylist ) {
 
         // material
@@ -639,22 +644,29 @@ namespace CGL {
 
         // create polygon size array and compute size of index array
         vector<size_t> sizes; size_t num_indices = 0;
-        XMLElement* e_vcount = e_polylist->FirstChildElement( "vcount" );
-        if ( e_vcount ) {
+        if ( !is_triangles ) {
+          XMLElement *e_vcount = e_polylist->FirstChildElement("vcount");
+          if ( e_vcount ) {
 
-          size_t size;
-          string s = e_vcount->GetText();
-          stringstream ss (s);
+            size_t size;
+            string s = e_vcount->GetText();
+            stringstream ss(s);
 
-          for (size_t i = 0; i < num_polygons; ++i) {
-            ss >> size;
-            sizes.push_back(size);
-            num_indices += size * stride;
+            for (size_t i = 0; i < num_polygons; ++i) {
+              ss >> size;
+              sizes.push_back(size);
+              num_indices += size * stride;
+            }
+
+          } else {
+            stat("Error: polygon sizes undefined in geometry: " << polymesh.id);
+            exit(-1);
           }
-
         } else {
-          stat("Error: polygon sizes undefined in geometry: " << polymesh.id);
-          exit( -1 );
+          for (size_t i = 0; i < num_polygons; ++i) {
+            sizes.push_back(3);
+            num_indices += 3 * stride;
+          }
         }
 
         // index array
@@ -757,40 +769,60 @@ namespace CGL {
             exit( -1 );
           }
 
+          XMLElement* e_lambert = e_technique->FirstChildElement( "lambert" );
           XMLElement* e_phong = e_technique->FirstChildElement( "phong" );
-          if ( !e_phong ) {
-            stat("Error: no phong shading is defined for material: " << material.id);
+          if (e_lambert) {
+            // parse lambert shading model
+            XMLElement* e_emit = e_lambert->FirstChildElement( "emission"  );
+            XMLElement* e_diff = e_lambert->FirstChildElement( "diffuse"   );
+            XMLElement* e_refi = e_lambert->FirstChildElement( "index_of_refraction" );
+
+            XMLElement* e_emit_val = e_emit ? e_emit->FirstChildElement( "color" ) : NULL;
+            XMLElement* e_diff_val = e_diff ? e_diff->FirstChildElement( "color" ) : NULL;
+            XMLElement* e_refi_val = e_refi ? e_refi->FirstChildElement( "float" ) : NULL;
+
+            string emit_str = e_emit_val ? e_emit_val->GetText() : "0 0 0 0";
+            string diff_str = e_diff_val ? e_diff_val->GetText() : "0 0 0 0";
+
+            material.emit = rgba_from_string( emit_str );
+            material.ambi = Color(0, 0, 0); // no ambient
+            material.diff = rgba_from_string( diff_str );
+            material.spec = Color(0, 0, 0); // no specular
+
+            material.shininess = 0.0f; // no shininess
+            material.refractive_index = e_refi_val ? atof(e_refi_val->GetText()) : 1.0f;
+          } else if (e_phong) {
+            // parse phong shading model
+            XMLElement* e_emit = e_phong->FirstChildElement( "emission"  );
+            XMLElement* e_ambi = e_phong->FirstChildElement( "ambient"   );
+            XMLElement* e_diff = e_phong->FirstChildElement( "diffuse"   );
+            XMLElement* e_spec = e_phong->FirstChildElement( "specular"  );
+            XMLElement* e_shin = e_phong->FirstChildElement( "shininess" );
+            XMLElement* e_refi = e_phong->FirstChildElement( "index_of_refraction" );
+
+            XMLElement* e_emit_val = e_emit ? e_emit->FirstChildElement( "color" ) : NULL;
+            XMLElement* e_ambi_val = e_ambi ? e_ambi->FirstChildElement( "color" ) : NULL;
+            XMLElement* e_diff_val = e_diff ? e_diff->FirstChildElement( "color" ) : NULL;
+            XMLElement* e_spec_val = e_spec ? e_spec->FirstChildElement( "color" ) : NULL;
+            XMLElement* e_shin_val = e_shin ? e_shin->FirstChildElement( "float" ) : NULL;
+            XMLElement* e_refi_val = e_refi ? e_refi->FirstChildElement( "float" ) : NULL;
+
+            string emit_str = e_emit_val ? e_emit_val->GetText() : "0 0 0 0";
+            string ambi_str = e_ambi_val ? e_ambi_val->GetText() : "0 0 0 0";
+            string diff_str = e_diff_val ? e_diff_val->GetText() : "0 0 0 0";
+            string spec_str = e_spec_val ? e_spec_val->GetText() : "0 0 0 0";
+
+            material.emit = rgba_from_string( emit_str );
+            material.ambi = rgba_from_string( ambi_str );
+            material.diff = rgba_from_string( diff_str );
+            material.spec = rgba_from_string( spec_str );
+
+            material.shininess = e_shin_val ? atof(e_shin_val->GetText()) : 0.0f;
+            material.refractive_index = e_refi_val ? atof(e_refi_val->GetText()) : 1.0f;
+          } else {
+            stat("Error: no supported shading is defined for material: " << material.id);
             exit( -1 );
           }
-
-          // parse phong shading model
-          XMLElement* e_emit = e_phong->FirstChildElement( "emission"  );
-          XMLElement* e_ambi = e_phong->FirstChildElement( "ambient"   );
-          XMLElement* e_diff = e_phong->FirstChildElement( "diffuse"   );
-          XMLElement* e_spec = e_phong->FirstChildElement( "specular"  );
-          XMLElement* e_shin = e_phong->FirstChildElement( "shininess" );
-          XMLElement* e_refi = e_phong->FirstChildElement( "index_of_refraction" );
-
-          XMLElement* e_emit_val = e_emit ? e_emit->FirstChildElement( "color" ) : NULL;
-          XMLElement* e_ambi_val = e_ambi ? e_ambi->FirstChildElement( "color" ) : NULL;
-          XMLElement* e_diff_val = e_diff ? e_diff->FirstChildElement( "color" ) : NULL;
-          XMLElement* e_spec_val = e_spec ? e_spec->FirstChildElement( "color" ) : NULL;
-          XMLElement* e_shin_val = e_shin ? e_shin->FirstChildElement( "float" ) : NULL;
-          XMLElement* e_refi_val = e_refi ? e_refi->FirstChildElement( "float" ) : NULL;
-
-          string emit_str = e_emit_val ? e_emit_val->GetText() : "0 0 0 0";
-          string ambi_str = e_ambi_val ? e_ambi_val->GetText() : "0 0 0 0";
-          string diff_str = e_diff_val ? e_diff_val->GetText() : "0 0 0 0";
-          string spec_str = e_spec_val ? e_spec_val->GetText() : "0 0 0 0";
-
-          material.emit = rgba_from_string( emit_str );
-          material.ambi = rgba_from_string( ambi_str );
-          material.diff = rgba_from_string( diff_str );
-          material.spec = rgba_from_string( spec_str );
-
-          material.shininess = e_shin_val ? atof(e_shin_val->GetText()) : 0.0f;
-          material.refractive_index = e_refi_val ? atof(e_refi_val->GetText()) : 1.0f;
-
         } else {
           stat("Error: undefined effect instance: " << effect_id);
           exit( -1 );
